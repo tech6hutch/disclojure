@@ -135,23 +135,28 @@
       :listeners (conj (@client :listeners) (struct Listener (get event-aliases event event) f))))
   client)
 
+(defn- get-prev-event-data [client event]
+  "Get the previous cached data for the event."
+  (let
+    [ cache-type (case event
+                   :channel-update      :channel
+                   :guild-update        :guild
+                   :guild-member-update :user
+                   :guild-role-update   :role
+                   :message-update      :message
+                   :user-update         :user
+                   nil))
+      id (if cache-type (case event
+                          :guild-member-update (-> data :user :id)
+                          (data :id)))
+      prev-data (if cache-type (cache/retrieve (@client :cache) cache-type id)) ]))
+
 (defn- dispatch [client type data]
   "Dispatches an event to the given client."
   (let
     [ event-name (keyword (.toLowerCase (.replaceAll (name type) "_" "-")))
-      listeners (seq (filter #{:any event-name} (-> @client :listeners :event)))
-      cache-type (if listeners (case event-name
-                                 :channel-update      :channel
-                                 :guild-update        :guild
-                                 :guild-member-update :user
-                                 :guild-role-update   :role
-                                 :message-update      :message
-                                 :user-update         :user
-                                 nil))
-      id (if cache-type (case event-name
-                          :guild-member-update (-> data :user :id)
-                          (data :id)))
-      prev-data (if cache-type (cache/retrieve (@client :cache) cache-type id))
+      listeners (seq (filter #(-> % :event #{:any event-name}) (:listeners @client)))
+      prev-data (if listeners (get-prev-event-data client listeners))
       event-struct (if listeners (struct Event event-name data client prev-data)) ]
     (if listeners (doseq [{f :calls} listeners] (future (f event-struct))))))
 
