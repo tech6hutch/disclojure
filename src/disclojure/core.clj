@@ -122,11 +122,11 @@
 (defn on
   "Registers an event listener for the given client.
 
-  Parameters:
+   Parameters:
 
-  - `client` The client to add the listener to.
-  - `event` The event to listen for (see [[event-aliases]]). Can also take a vector of multiple events to listen for.
-  - `f` The function to call when the event is received."
+   - `client` The client to add the listener to.
+   - `event` The event to listen for (see [[event-aliases]]). Can also take a vector of multiple events to listen for.
+   - `f` The function to call when the event is received."
   [client event f]
   (if (vector? event)
     (swap! client assoc
@@ -135,28 +135,40 @@
       :listeners (conj (@client :listeners) (struct Listener (get event-aliases event event) f))))
   client)
 
-(defn- get-prev-event-data [client event]
-  "Get the previous cached data for the event."
-  (let
-    [ cache-type (case event
+(defn api-event-type->dclj
+  "Convert the event type from the API to its idiomatic name in Disclojure.
+
+   Parameters:
+  
+   - `type` The event type from the API, as a keyword."
+  [type]
+  (keyword (.toLowerCase (.replaceAll (name type) "_" "-"))))
+
+(defn- get-cached-event-data
+  "Get the previous, cached data for the object in the event."
+  [client event-name]
+  (when-let
+    [ cache-type (case event-name
                    :channel-update      :channel
                    :guild-update        :guild
                    :guild-member-update :user
                    :guild-role-update   :role
                    :message-update      :message
                    :user-update         :user
-                   nil))
-      id (if cache-type (case event
-                          :guild-member-update (-> data :user :id)
-                          (data :id)))
-      prev-data (if cache-type (cache/retrieve (@client :cache) cache-type id)) ]))
+                   nil) ]
+    (cache/retrieve (:cache @client)
+                    cache-type
+                    (case event-name
+                      :guild-member-update (-> data :user :id)
+                      (:id data)))))
 
-(defn- dispatch [client type data]
+(defn- dispatch
   "Dispatches an event to the given client."
+  [client type data]
   (let
-    [ event-name (keyword (.toLowerCase (.replaceAll (name type) "_" "-")))
+    [ event-name (api-event-type->dclj type)
       listeners (seq (filter #(-> % :event #{:any event-name}) (:listeners @client)))
-      prev-data (if listeners (get-prev-event-data client listeners))
+      prev-data (if listeners (get-cached-event-data client event-name))
       event-struct (if listeners (struct Event event-name data client prev-data)) ]
     (if listeners (doseq [{f :calls} listeners] (future (f event-struct))))))
 
