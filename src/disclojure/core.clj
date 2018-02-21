@@ -130,20 +130,16 @@
   [client event f]
   (if (vector? event)
     (swap! client assoc
-      :listeners (apply (partial conj (@client :listeners)) (map #(struct Listener % f) event)))
+      :listeners (apply (partial conj (@client :listeners)) (map #(struct Listener (get event-aliases % %) f) event)))
     (swap! client assoc
-      :listeners (conj (@client :listeners) (struct Listener event f))))
+      :listeners (conj (@client :listeners) (struct Listener (get event-aliases event event) f))))
   client)
 
 (defn- dispatch [client type data]
   "Dispatches an event to the given client."
   (let
     [ event-name (keyword (.toLowerCase (.replaceAll (name type) "_" "-")))
-      listeners (seq (filter
-                      #(or
-                        (= (% :event) :any)
-                        (= (or (-> % :event event-aliases) (% :event)) event-name))
-                      (@client :listeners)))
+      listeners (seq (filter #{:any event-name} (-> @client :listeners :event)))
       cache-type (if listeners (case event-name
                                  :channel-update      :channel
                                  :guild-update        :guild
